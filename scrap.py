@@ -1,68 +1,99 @@
 from playwright.sync_api import sync_playwright
 import time
 import csv
-
+import re
+import unicodedata
 
 url = "https://barbechli.tn/search;subcategory=laptops;subcategories=laptops"
 
-# Prepare CSV file for saving
-def save_to_csv(products, filename="scraped_data.csv"):
-    """ Saves scraped product data to a CSV file. """
-    if not products:
-        print("No products to save.")
-        return
+# Prepare CSV file (open in append mode to avoid losing progress)
+def save_to_csv_single(product, filename="scraped_data.csv"):
+    """ Saves a single product's data to a CSV file immediately. """
+    with open(filename, mode="a", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=["name", "price", "link", "shop", "details"])
+        if file.tell() == 0:  # If file is empty, write headers
+            writer.writeheader()
+        writer.writerow(product)
 
-    keys = products[0].keys()
-    with open(filename, mode="w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=keys)
-        writer.writeheader()
-        writer.writerows(products)
-
-    print(f"Data saved to {filename}")
+    print(f"Saved: {product['name']} - {product['price']}")
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(headless=False)  # Set to True when done debugging
-    page = browser.new_page()
-    page.goto(url, timeout=60000)  # Load page with 60s timeout
+    browser = p.chromium.launch(headless=False)
+    context = browser.new_context()
+    page = context.new_page()
+    page.goto(url, timeout=120000)
 
-    # Ensure JavaScript content is fully loaded
     page.wait_for_load_state("networkidle")
 
     # Scroll down multiple times to load all products
-    for _ in range(5):  # Adjust if necessary
+    for _ in range(7):
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        time.sleep(2)  # Allow time for content to load
+        time.sleep(2)
 
-    # Wait for product elements to appear
-    product_selector = "product-thumbnail"
-    page.wait_for_selector(product_selector, timeout=15000)
+    product_selector = "product-card > a"
+    page.wait_for_selector(product_selector, timeout=60000)
 
-    # Extract product details
-    products = page.query_selector_all(product_selector)
-    product_data = []
-    
-    for idx, product in enumerate(products):
+    product_links = [
+        element.get_attribute("href") for element in page.query_selector_all(product_selector)
+    ]
+    product_links = [f"https://barbechli.tn/{link}" for link in product_links if link]
+
+    print(f"Found {len(product_links)} products.")
+
+    # Scrape each product page
+    for idx, link in enumerate(product_links):
         try:
-            name = product.query_selector(".ba-item-title").inner_text().strip()
-            price = product.query_selector(".price-container.current").inner_text().strip()
-            link = product.query_selector(".card.ba-container").get_attribute("href")
+            product_page = context.new_page()
+            for attempt in range(3):
+                try:
+                    product_page.goto(link, timeout=60000)
+                    product_page.wait_for_load_state("networkidle")
+                    break
+                except Exception:
+                    if attempt == 2:
+                        raise
 
-            # Print product details
-            print(f"Product {idx+1}:")
-            print(f"  Name: {name}")
-            print(f"  Price: {price}")
-            print(f"  Link: https://barbechli.tn/{link}\n")  # Append base URL
+            # Extract product details
+            name_element = product_page.query_selector(".ba-item-title")
+            name = name_element.inner_text().strip() if name_element else "N/A"
 
-            # Add product details to the list
-            product_data.append({
+            # Inline normalization of the name
+            first_word = unicodedata.normalize('NFD', name).encode('ascii', 'ignore').decode('ascii').lower().split()[0] if name != "N/A" else ""
+
+            if first_word == "ecran":  # Compare to normalized "ecran"
+                print(f"Product {idx+1}: Skipped due to name starting with 'Ecran' (or variation)")
+                continue
+            
+            price_element = product_page.query_selector(".price-container .current")
+            price = price_element.inner_text().strip() if price_element else "N/A"
+
+            img_element = product_page.query_selector("img.item-list-source-logo")
+            img_url = img_element.get_attribute("src") if img_element else "N/A"
+
+            shopName = "N/A"
+            if img_url and img_url != "N/A":
+                match = re.search(r"logo-(.*?)\.jpg", img_url)
+                shopName = match.group(1) if match else "N/A"
+
+            details_element = product_page.query_selector("div.row.product-body-text")
+            details = details_element.inner_text().strip() if details_element else "N/A"
+
+            print(f"Product {idx+1}: {name} - {price} - {shopName}")
+
+            product = {
                 "name": name,
                 "price": price,
-                "link": f"https://barbechli.tn/{link}"
-            })
-        except Exception as e:
-            print(f"Product {idx+1}: Could not extract some details. Error: {e}")
+                "link": link,
+                "shop": shopName,
+                "details": details
+            }
 
-    # Save all products to CSV
-    save_to_csv(product_data)
+            # Save immediately
+            save_to_csv_single(product)
+
+            product_page.close()
+
+        except Exception as e:
+            print(f"Product {idx+1}: Could not extract details. Error: {e}")
 
     browser.close()
