@@ -3,44 +3,40 @@ import time
 import csv
 import re
 import unicodedata
+import pandas as pd
 
 url = "https://barbechli.tn/search;subcategory=laptops;subcategories=laptops"
+csv_filename = "scraped_data.csv"
 
-# Prepare CSV file (open in append mode to avoid losing progress)
-def save_to_csv_single(product, filename="scraped_data.csv"):
-    """ Saves a single product's data to a CSV file immediately. """
+# Prepare CSV file
+def save_to_csv_single(product, filename=csv_filename):
     with open(filename, mode="a", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=["name", "price", "link", "shop", "details"])
-        if file.tell() == 0:  # If file is empty, write headers
+        if file.tell() == 0:
             writer.writeheader()
         writer.writerow(product)
-
     print(f"Saved: {product['name']} - {product['price']}")
 
+# Scraping process
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=False)
     context = browser.new_context()
     page = context.new_page()
     page.goto(url, timeout=120000)
-
     page.wait_for_load_state("networkidle")
 
-    # Scroll down multiple times to load all products
     for _ in range(7):
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         time.sleep(2)
 
     product_selector = "product-card > a"
     page.wait_for_selector(product_selector, timeout=60000)
-
     product_links = [
         element.get_attribute("href") for element in page.query_selector_all(product_selector)
     ]
     product_links = [f"https://barbechli.tn/{link}" for link in product_links if link]
-
     print(f"Found {len(product_links)} products.")
 
-    # Scrape each product page
     for idx, link in enumerate(product_links):
         try:
             product_page = context.new_page()
@@ -53,17 +49,14 @@ with sync_playwright() as p:
                     if attempt == 2:
                         raise
 
-            # Extract product details
             name_element = product_page.query_selector(".ba-item-title")
             name = name_element.inner_text().strip() if name_element else "N/A"
 
-            # Inline normalization of the name
             first_word = unicodedata.normalize('NFD', name).encode('ascii', 'ignore').decode('ascii').lower().split()[0] if name != "N/A" else ""
-
-            if first_word == "ecran":  # Compare to normalized "ecran"
-                print(f"Product {idx+1}: Skipped due to name starting with 'Ecran' (or variation)")
+            if first_word == "ecran":
+                print(f"Product {idx+1}: Skipped due to name starting with 'Ecran'")
                 continue
-            
+
             price_element = product_page.query_selector(".price-container .current")
             price = price_element.inner_text().strip() if price_element else "N/A"
 
@@ -88,12 +81,60 @@ with sync_playwright() as p:
                 "details": details
             }
 
-            # Save immediately
             save_to_csv_single(product)
-
             product_page.close()
 
         except Exception as e:
             print(f"Product {idx+1}: Could not extract details. Error: {e}")
 
     browser.close()
+
+# --- Data Cleaning and Transformation ---
+df = pd.read_csv(csv_filename)
+df_cleaned = df.drop_duplicates()
+df_cleaned.to_csv(csv_filename, index=False)
+print(f"Cleaned dataset saved as {csv_filename}")
+
+# --- Feature Extraction ---
+def extract_characteristics(text):
+    characteristics = {
+        'Model': None, 'Processor Brand': None, 'Processor': None,
+        'RAM': None, 'Storage': None, 'GPU': None, 'Screen': None, 'Color': None, 'OS': None
+    }
+    
+    if pd.isna(text):
+        return characteristics
+
+
+    processor_match = re.search(r'(Intel|AMD|Apple|Celeron|Ryzen|M\d+|Ultra \d+)', text, re.IGNORECASE)
+    if processor_match:
+        characteristics['Processor Brand'] = processor_match.group(1)
+
+    ram_match = re.search(r'(\d+\s*Go)', text, re.IGNORECASE)
+    if ram_match:
+        characteristics['RAM'] = ram_match.group(1)
+
+    storage_match = re.search(r'(\d+\s*Go\s*SSD|\d+\s*TB\s*SSD|\d+\s*Go|\d+\s*TB)', text, re.IGNORECASE)
+    if storage_match:
+        characteristics['Storage'] = storage_match.group(1)
+
+    gpu_match = re.search(r'(RTX\s*\d+|GTX\s*\d+)', text, re.IGNORECASE)
+    if gpu_match:
+        characteristics['GPU'] = gpu_match.group(1)
+
+    screen_match = re.search(r'(\d+["”]|\d+\s*cm|\d+\s*inch)', text, re.IGNORECASE)
+    if screen_match:
+        characteristics['Screen'] = screen_match.group(1)
+
+    color_match = re.search(r'(Gris|Silver|Bleu|Noir|Gold|Rose|Rouge|Vert)', text, re.IGNORECASE)
+    if color_match:
+        characteristics['Color'] = color_match.group(1)
+
+    return characteristics
+
+df_characteristics = df_cleaned.copy()
+characteristics_df = df_characteristics['details'].apply(extract_characteristics).apply(pd.Series)
+
+df_final = pd.concat([df_characteristics, characteristics_df], axis=1)
+df_final.to_csv(csv_filename, index=False)
+print("Processed data saved as scraped_data.csv")
