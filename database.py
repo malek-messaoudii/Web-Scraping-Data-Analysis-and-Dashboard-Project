@@ -1,6 +1,11 @@
 import psycopg2
 from config import DB_CONFIG
-from extractor import extract_characteristics, extract_price,process_single_product  # Function to process details
+from extractor import extract_characteristics,process_single_product  # Function to process details
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def check_duplicate(company_link):
     """Check if a product with the same companyLink already exists in the database."""
@@ -27,7 +32,7 @@ def store_product_in_db(product):
     try:
         # Check if the product already exists based on the companyLink
         if check_duplicate(product["companyLink"]):
-            print(f"Product already exists in DB: {product['name']}")
+            logger.info(f"Product already exists in DB: {product['name']}")
             return  # Skip saving this product
 
         conn = psycopg2.connect(**DB_CONFIG)
@@ -69,9 +74,56 @@ def store_product_in_db(product):
         cursor.execute(query, values)
         conn.commit()
 
-        print(f"Stored in DB: {product['name']}")
+        logger.info(f"Stored in DB: {product['name']}")
 
         cursor.close()
         conn.close()
     except Exception as e:
-        print(f"Database Error: {e}")
+        logger.error(f"Database Error: {e}")
+
+# Add this to database.py
+
+def get_all_products():
+    """Fetch all products from the database."""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+
+        query = """
+        SELECT 
+            id, company_path, description, price, company, type, model, 
+            processor_brand, processor, ram, gpu, screen, color, os, storage
+        FROM products
+        """
+        cursor.execute(query)
+        products = cursor.fetchall()
+
+        # Convert tuples to dictionaries for JSON serialization
+        product_list = []
+        for product in products:
+            product_dict = {
+                "id": product[0],
+                "company_link": product[1],
+                "description": product[2],
+                "price": product[3],
+                "shop": product[4],
+                "type": product[5],
+                "model": product[6],
+                "processor_brand": product[7],
+                "processor": product[8],
+                "ram": product[9],
+                "gpu": product[10],
+                "screen": product[11],
+                "color": product[12],
+                "os": product[13],
+                "storage": product[14]
+            }
+            product_list.append(product_dict)
+
+        cursor.close()
+        conn.close()
+        return product_list
+
+    except Exception as e:
+        logger.error(f"Error fetching products: {e}")
+        raise
