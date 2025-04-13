@@ -2,10 +2,19 @@ from fastapi import FastAPI, HTTPException
 import logging
 from scraper import scrape
 from database import get_all_products 
-
+from fastapi.middleware.cors import CORSMiddleware
 
 # Initialize FastAPI app
 app = FastAPI()
+
+# Allow Dash frontend (e.g. on port 8050) to call FastAPI
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # you can restrict it to localhost:8050 if needed
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Set up logging to capture more details
 logging.basicConfig(level=logging.DEBUG)
