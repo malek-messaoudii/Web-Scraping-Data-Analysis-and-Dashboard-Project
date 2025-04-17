@@ -45,8 +45,8 @@ Version Control: Git
 2. Launch the dashboard :
    ```
    cd dashboard
-   ```
    python app.py
+   ```
 
 ## API Endpoints
 
