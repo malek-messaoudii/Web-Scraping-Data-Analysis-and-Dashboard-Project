@@ -16,4 +16,32 @@ Visualization: Dash, Plotly, Pandas, Kibana
 Version Control: Git
 
 ## Installation
-1. Clone the repository:
+1. Clone the repository :
+   git clone https://github.com/malek-messaoudii/Web-Scraping-Data-Analysis-and-Dashboard-Project.git
+   cd Web-Scraping-Data-Analysis-and-Dashboard-Project
+2. Install dependencies : 
+   pip install -r requirements.txt
+   
+## Usage
+
+1. Start the API server :
+   python -m uvicorn main:app --reload
+2. Launch the dashboard :
+   cd dashboard
+   python app.py
+
+## API Endpoints
+GET /products: Retrieve all scraped computer data
+POST /scrape: Initiate a new scraping session
+
+
+
+## Dashboard Features
+Interactive price distribution charts
+Brand comparison visualizations
+Time-series analysis of price trends
+Filtering capabilities
+
+## Team
+Malek
+Ahmed
