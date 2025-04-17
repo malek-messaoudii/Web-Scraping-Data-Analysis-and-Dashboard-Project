@@ -27,25 +27,25 @@ Version Control: Git
 ## Installation
 
 1. Clone the repository :
-   
+   ```
    git clone https://github.com/malek-messaoudii/Web-Scraping-Data-Analysis-and-Dashboard-Project.git
    
    cd Web-Scraping-Data-Analysis-and-Dashboard-Project
-   
+   ```
 2. Install dependencies :
-   
+   ```
    pip install -r requirements.txt
-   
+   ```
 ## Usage
 
 1. Start the API server :
-   
+   ```
    python -m uvicorn main:app --reload
-   
+   ```
 2. Launch the dashboard :
-   
+   ```
    cd dashboard
-   
+   ```
    python app.py
 
 ## API Endpoints
